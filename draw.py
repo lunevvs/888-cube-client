@@ -661,14 +661,6 @@ def main(argv: list[str] | None = None) -> int:
                 )
             return 0
 
-        maximum_fps = args.baud / (len(commands[0]) * 10)
-        if is_series and fps > maximum_fps:
-            print(
-                f"warning: {fps:g} fps exceeds the approximate "
-                f"{maximum_fps:.1f} fps serial limit at {args.baud} baud",
-                file=sys.stderr,
-            )
-
         connection = SerialConnection(
             port=args.port,
             baud=args.baud,

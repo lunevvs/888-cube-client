@@ -70,6 +70,35 @@ python3 draw.py --front up --bottom left draw-series/rotating-diagonal
 python3 draw.py --list-algorithms
 ```
 
+## Bash completion
+
+Подключить completion в текущей оболочке:
+
+```bash
+source completions/draw.py.bash
+```
+
+После подключения запускайте клиент как исполняемый файл, чтобы Bash применял
+completion к `draw.py`:
+
+```bash
+./draw.py --front up --bottom <Tab>
+./draw.py --algorithm notification_<Tab>
+./draw.py draw-series/<Tab>
+```
+
+Completion подсказывает параметры командной строки, алгоритмы из каталога
+`algorithms`, допустимые грани, serial-порты, каталоги и файлы кадров размером
+64 байта. Для `--bottom` предлагаются только грани, соседние с уже выбранной
+`--front`.
+
+Для автоматического подключения добавьте в `~/.bashrc` путь к completion из
+локальной копии проекта, например:
+
+```bash
+source /path/to/888-cube-client/completions/draw.py.bash
+```
+
 ## Формирование кадра
 
 Файл кадра содержит ровно 64 сырых байта. Каждый байт управляет одним вертикальным столбиком из восьми светодиодов.
