@@ -23,6 +23,30 @@ FRAME_SIZE = 64
 COMMAND_PREFIX = b"draw "
 EMPTY_COMMAND = COMMAND_PREFIX + bytes(FRAME_SIZE)
 FRONT_FACES = ("front", "back", "left", "right", "up", "down")
+FACE_VECTORS = {
+    "front": (0, -1, 0),
+    "back": (0, 1, 0),
+    "left": (1, 0, 0),
+    "right": (-1, 0, 0),
+    "up": (0, 0, 1),
+    "down": (0, 0, -1),
+}
+OPPOSITE_FACES = {
+    "front": "back",
+    "back": "front",
+    "left": "right",
+    "right": "left",
+    "up": "down",
+    "down": "up",
+}
+DEFAULT_BOTTOM_FACES = {
+    "front": "down",
+    "back": "down",
+    "left": "down",
+    "right": "down",
+    "up": "front",
+    "down": "back",
+}
 
 
 class DrawError(Exception):
@@ -141,17 +165,68 @@ def build_command(data: bytes) -> bytes:
     return COMMAND_PREFIX + data
 
 
-def orient_frame(data: bytes, front: str) -> bytes:
-    """Rotate a frame so its virtual front points at the selected cube face."""
-    if len(data) != FRAME_SIZE:
-        raise DrawError(
-            f"binary data must contain exactly {FRAME_SIZE} bytes; got {len(data)}"
-        )
+def resolve_bottom_face(front: str, bottom: str | None = None) -> str:
+    """Validate an orientation and return its physical bottom face."""
     if front not in FRONT_FACES:
         raise DrawError(
             f"unknown front face {front!r}; available: {', '.join(FRONT_FACES)}"
         )
-    if front == "front":
+    if bottom is None:
+        return DEFAULT_BOTTOM_FACES[front]
+    if bottom not in FRONT_FACES:
+        raise DrawError(
+            f"unknown bottom face {bottom!r}; available: {', '.join(FRONT_FACES)}"
+        )
+    if bottom == front or bottom == OPPOSITE_FACES[front]:
+        available = (
+            face
+            for face in FRONT_FACES
+            if face != front and face != OPPOSITE_FACES[front]
+        )
+        raise DrawError(
+            f"bottom face {bottom!r} is not adjacent to front face {front!r}; "
+            f"available: {', '.join(available)}"
+        )
+    return bottom
+
+
+def cross_product(
+    first: tuple[int, int, int], second: tuple[int, int, int]
+) -> tuple[int, int, int]:
+    return (
+        first[1] * second[2] - first[2] * second[1],
+        first[2] * second[0] - first[0] * second[2],
+        first[0] * second[1] - first[1] * second[0],
+    )
+
+
+def orient_coordinates(
+    x: int, y: int, z: int, front: str, bottom: str
+) -> tuple[int, int, int]:
+    front_vector = FACE_VECTORS[front]
+    bottom_vector = FACE_VECTORS[bottom]
+    target_axes = (
+        cross_product(front_vector, bottom_vector),
+        tuple(-component for component in front_vector),
+        tuple(-component for component in bottom_vector),
+    )
+    target = [0, 0, 0]
+    for coordinate, axis_vector in zip((x, y, z), target_axes):
+        for axis, direction in enumerate(axis_vector):
+            if direction:
+                target[axis] = coordinate if direction > 0 else 7 - coordinate
+                break
+    return target[0], target[1], target[2]
+
+
+def orient_frame(data: bytes, front: str, bottom: str | None = None) -> bytes:
+    """Rotate a frame toward the selected front and bottom cube faces."""
+    if len(data) != FRAME_SIZE:
+        raise DrawError(
+            f"binary data must contain exactly {FRAME_SIZE} bytes; got {len(data)}"
+        )
+    bottom = resolve_bottom_face(front, bottom)
+    if front == "front" and bottom == "down":
         return data
 
     oriented = bytearray(FRAME_SIZE)
@@ -161,17 +236,9 @@ def orient_frame(data: bytes, front: str) -> bytes:
             for z in range(8):
                 if not column & (1 << z):
                     continue
-                if front == "back":
-                    target = (7 - x, 7 - y, z)
-                elif front == "left":
-                    target = (7 - y, x, z)
-                elif front == "right":
-                    target = (y, 7 - x, z)
-                elif front == "up":
-                    target = (x, z, 7 - y)
-                else:  # down
-                    target = (x, 7 - z, y)
-                target_x, target_y, target_z = target
+                target_x, target_y, target_z = orient_coordinates(
+                    x, y, z, front, bottom
+                )
                 oriented[target_x * 8 + target_y] |= 1 << target_z
     return bytes(oriented)
 
@@ -496,11 +563,22 @@ def create_parser() -> argparse.ArgumentParser:
         "--front",
         "--front-face",
         choices=FRONT_FACES,
-        default="front",
+        default="up",
         metavar="FACE",
         help=(
             "rotate frames so their front points at FACE: "
             "front, back, left, right, up, or down (default: front)"
+        ),
+    )
+    parser.add_argument(
+        "--bottom",
+        "--bottom-face",
+        choices=FRONT_FACES,
+        metavar="FACE",
+        default="back",
+        help=(
+            "orient frames by placing FACE below the selected front; FACE must "
+            "be adjacent to --front (default preserves the original orientation)"
         ),
     )
     return parser
@@ -558,14 +636,19 @@ def main(argv: list[str] | None = None) -> int:
             cycles = args.cycles
             clear_after = True
 
-        commands = [build_command(orient_frame(data, args.front)) for _, data in frames]
+        bottom = resolve_bottom_face(args.front, args.bottom)
+        commands = [
+            build_command(orient_frame(data, args.front, bottom))
+            for _, data in frames
+        ]
         if (args.cycles is not None or args.loop) and not is_series:
             raise DrawError("--cycles can only be used with a series or algorithm")
         if args.dry_run:
             if not is_series:
                 print(
                     f"valid frame: {frames[0][0]} ({FRAME_SIZE} data bytes, "
-                    f"{len(commands[0])} command bytes, front: {args.front})"
+                    f"{len(commands[0])} command bytes, front: {args.front}, "
+                    f"bottom: {bottom})"
                 )
             else:
                 cycle_description = (
@@ -573,7 +656,8 @@ def main(argv: list[str] | None = None) -> int:
                 )
                 print(
                     f"valid series: {source_label} ({len(frames)} frames at "
-                    f"{fps:g} fps, {cycle_description}, front: {args.front})"
+                    f"{fps:g} fps, {cycle_description}, front: {args.front}, "
+                    f"bottom: {bottom})"
                 )
             return 0
 

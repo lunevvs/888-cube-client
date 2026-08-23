@@ -57,6 +57,64 @@ class DrawTests(unittest.TestCase):
                 expected[x * 8 + y] = 1 << z
                 self.assertEqual(draw.orient_frame(bytes(frame), face), expected)
 
+    def test_bottom_face_selects_all_24_cube_orientations(self):
+        frame = bytearray(64)
+        frame[1 * 8 + 0] = 1 << 0
+        oriented_positions = set()
+
+        for front in draw.FRONT_FACES:
+            for bottom in draw.FRONT_FACES:
+                if bottom in (front, draw.OPPOSITE_FACES[front]):
+                    continue
+                with self.subTest(front=front, bottom=bottom):
+                    oriented = draw.orient_frame(bytes(frame), front, bottom)
+                    positions = [
+                        (x, y, z)
+                        for x in range(8)
+                        for y in range(8)
+                        for z in range(8)
+                        if oriented[x * 8 + y] & (1 << z)
+                    ]
+                    self.assertEqual(len(positions), 1)
+                    position = positions[0]
+                    oriented_positions.add(position)
+
+                    front_axis = draw.FACE_VECTORS[front].index(
+                        next(value for value in draw.FACE_VECTORS[front] if value)
+                    )
+                    bottom_axis = draw.FACE_VECTORS[bottom].index(
+                        next(value for value in draw.FACE_VECTORS[bottom] if value)
+                    )
+                    front_boundary = (
+                        7 if draw.FACE_VECTORS[front][front_axis] > 0 else 0
+                    )
+                    bottom_boundary = (
+                        7 if draw.FACE_VECTORS[bottom][bottom_axis] > 0 else 0
+                    )
+                    self.assertEqual(position[front_axis], front_boundary)
+                    self.assertEqual(position[bottom_axis], bottom_boundary)
+
+        self.assertEqual(len(oriented_positions), 24)
+
+    def test_bottom_face_must_be_adjacent_to_front(self):
+        for bottom in ("front", "back"):
+            with self.subTest(bottom=bottom):
+                with self.assertRaisesRegex(draw.DrawError, "is not adjacent"):
+                    draw.orient_frame(bytes(64), "front", bottom)
+
+    def test_default_bottom_faces_preserve_previous_orientations(self):
+        self.assertEqual(
+            draw.DEFAULT_BOTTOM_FACES,
+            {
+                "front": "down",
+                "back": "down",
+                "left": "down",
+                "right": "down",
+                "up": "front",
+                "down": "back",
+            },
+        )
+
     def test_front_parameter_accepts_all_six_faces(self):
         for face in draw.FRONT_FACES:
             with self.subTest(face=face):
@@ -70,6 +128,14 @@ class DrawTests(unittest.TestCase):
             ["--front-face", "left", "frame.bin"]
         )
         self.assertEqual(arguments.front, "left")
+
+    def test_bottom_parameter_and_alias_are_supported(self):
+        for option in ("--bottom", "--bottom-face"):
+            with self.subTest(option=option):
+                arguments = draw.create_parser().parse_args(
+                    ["--front", "up", option, "left", "frame.bin"]
+                )
+                self.assertEqual(arguments.bottom, "left")
 
     def test_accepts_current_firmware_response(self):
         self.assertTrue(draw.response_confirms_frame(b"draw\r\n64\r\n"))

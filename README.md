@@ -42,15 +42,25 @@ python3 draw.py --cycles 3 draw-series/rotating-diagonal
 python3 draw.py --algorithm water_surface
 ```
 
-Повернуть любой кадр или алгоритм другой гранью к зрителю:
+Повернуть любой кадр или алгоритм другой гранью к зрителю и выбрать его ориентацию:
 
 ```bash
-python3 draw.py --front left --algorithm notification_warning
-python3 draw.py --front up draw-series/rotating-diagonal
+python3 draw.py --front left --bottom down --algorithm notification_warning
+python3 draw.py --front up --bottom left draw-series/rotating-diagonal
 ```
 
 Параметр `--front` (также доступен как `--front-face`) принимает `front`,
 `back`, `left`, `right`, `up` или `down`. По умолчанию используется `front`.
+Параметр `--bottom` (или `--bottom-face`) задаёт грань куба, которая должна
+находиться снизу от выбранной лицевой грани. Лицевая и нижняя грани должны быть
+соседними: нельзя выбрать одну и ту же грань или противоположные грани.
+
+Если `--bottom` не задан, клиент сохраняет прежнюю ориентацию `--front`:
+
+- для `front`, `back`, `left` и `right` снизу находится `down`;
+- для `up` снизу находится `front`;
+- для `down` снизу находится `back`.
+
 Поворот применяется ко всем кадрам непосредственно перед отправкой, поэтому он
 одинаково работает с файлами, сериями и процедурными алгоритмами.
 
