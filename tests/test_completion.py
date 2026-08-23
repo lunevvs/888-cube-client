@@ -36,6 +36,9 @@ class CompletionTests(unittest.TestCase):
             complete("draw.py", "--algorithm", "notification_w"),
         )
 
+    def test_completes_automatic_port(self):
+        self.assertIn("auto", complete("draw.py", "--port", "a"))
+
     def test_completes_only_adjacent_bottom_faces(self):
         values = complete("draw.py", "--front", "up", "--bottom", "")
         self.assertEqual(values, ["front", "back", "left", "right"])

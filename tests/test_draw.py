@@ -148,8 +148,55 @@ class DrawTests(unittest.TestCase):
 
     def test_fast_mode_is_the_default(self):
         arguments = draw.create_parser().parse_args(["frame.bin"])
+        self.assertEqual(arguments.port, "auto")
         self.assertEqual(arguments.reset_delay, 0.0)
         self.assertFalse(arguments.require_ack)
+
+    def test_explicit_serial_port_overrides_discovery(self):
+        self.assertEqual(
+            draw.resolve_serial_port("/dev/cu.custom", ["/dev/cu.other"]),
+            "/dev/cu.custom",
+        )
+
+    def test_only_discovered_serial_port_is_selected(self):
+        self.assertEqual(
+            draw.resolve_serial_port("auto", ["/dev/cu.usbmodem101"]),
+            "/dev/cu.usbmodem101",
+        )
+
+    def test_missing_serial_port_is_reported(self):
+        with self.assertRaisesRegex(draw.DrawError, "no Arduino-compatible"):
+            draw.resolve_serial_port("auto", [])
+
+    def test_ambiguous_serial_ports_are_reported(self):
+        with self.assertRaisesRegex(draw.DrawError, "multiple Arduino-compatible"):
+            draw.resolve_serial_port(
+                "auto", ["/dev/cu.usbmodem101", "/dev/cu.usbmodem102"]
+            )
+
+    def test_discovery_deduplicates_linux_by_id_symlink(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            device = root / "ttyACM0"
+            device.touch()
+            by_id = root / "usb-Arduino_Micro"
+            by_id.symlink_to(device)
+
+            ports = draw.discover_serial_ports(
+                (str(root / "usb-Arduino*"), str(root / "ttyACM*"))
+            )
+
+        self.assertEqual(ports, [str(by_id)])
+
+    @patch.object(draw, "discover_serial_ports", return_value=["/dev/cu.usbmodem101"])
+    def test_list_ports_does_not_require_frame_source(self, discover_mock):
+        output = io.StringIO()
+        with redirect_stdout(output):
+            result = draw.main(["--list-ports"])
+
+        self.assertEqual(result, 0)
+        self.assertEqual(output.getvalue(), "/dev/cu.usbmodem101\n")
+        discover_mock.assert_called_once_with()
 
     def test_ack_can_be_enabled(self):
         arguments = draw.create_parser().parse_args(["--ack", "frame.bin"])

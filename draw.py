@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import glob
 import importlib
 import os
 import re
@@ -17,7 +18,7 @@ from pathlib import Path
 from algorithms.base import AnimationAlgorithm
 
 
-DEFAULT_PORT = "/dev/cu.usbmodem2101"
+DEFAULT_PORT = "auto"
 DEFAULT_BAUD = 9600
 FRAME_SIZE = 64
 COMMAND_PREFIX = b"draw "
@@ -51,6 +52,59 @@ DEFAULT_BOTTOM_FACES = {
 
 class DrawError(Exception):
     """A user-facing error while preparing or sending a frame."""
+
+
+def serial_port_patterns(platform: str | None = None) -> tuple[str, ...]:
+    """Return likely USB serial device patterns for the current POSIX system."""
+    platform = platform or sys.platform
+    if platform == "darwin":
+        return ("/dev/cu.usbmodem*", "/dev/cu.usbserial*")
+    if platform.startswith("linux"):
+        return (
+            "/dev/serial/by-id/*Arduino*",
+            "/dev/serial/by-id/*arduino*",
+            "/dev/serial/by-id/*SparkFun*",
+            "/dev/ttyACM*",
+            "/dev/ttyUSB*",
+        )
+    if platform.startswith("freebsd"):
+        return ("/dev/cuaU*",)
+    return ()
+
+
+def discover_serial_ports(patterns: tuple[str, ...] | None = None) -> list[str]:
+    """Find likely Arduino-compatible serial ports without opening them."""
+    patterns = patterns if patterns is not None else serial_port_patterns()
+    ports = []
+    real_paths = set()
+    for pattern in patterns:
+        for port in sorted(glob.glob(pattern)):
+            real_path = os.path.realpath(port)
+            if real_path in real_paths:
+                continue
+            real_paths.add(real_path)
+            ports.append(port)
+    return ports
+
+
+def resolve_serial_port(
+    requested_port: str, candidates: list[str] | None = None
+) -> str:
+    """Resolve an explicit port or safely select the only discovered port."""
+    if requested_port != "auto":
+        return requested_port
+    candidates = discover_serial_ports() if candidates is None else candidates
+    if not candidates:
+        raise DrawError(
+            "no Arduino-compatible serial port found; connect the cube or use "
+            "--port PATH"
+        )
+    if len(candidates) > 1:
+        raise DrawError(
+            "multiple Arduino-compatible serial ports found: "
+            f"{', '.join(candidates)}; select one with --port PATH"
+        )
+    return candidates[0]
 
 
 def algorithm_names() -> list[str]:
@@ -500,7 +554,16 @@ def create_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="list available procedural algorithms and exit",
     )
-    parser.add_argument("--port", default=DEFAULT_PORT, help=f"serial port (default: {DEFAULT_PORT})")
+    parser.add_argument(
+        "--list-ports",
+        action="store_true",
+        help="list discovered Arduino-compatible serial ports and exit",
+    )
+    parser.add_argument(
+        "--port",
+        default=DEFAULT_PORT,
+        help="serial port path or 'auto' to detect it (default: auto)",
+    )
     parser.add_argument("--baud", type=int, default=DEFAULT_BAUD, help=f"baud rate (default: {DEFAULT_BAUD})")
     parser.add_argument(
         "--reset-delay",
@@ -587,6 +650,13 @@ def create_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     args = create_parser().parse_args(argv)
     try:
+        if args.list_ports:
+            ports = discover_serial_ports()
+            if ports:
+                print("\n".join(ports))
+            else:
+                print("no Arduino-compatible serial ports found")
+            return 0
         if args.list_algorithms:
             for name in algorithm_names():
                 algorithm, generated_frames = load_algorithm(name)
@@ -661,8 +731,9 @@ def main(argv: list[str] | None = None) -> int:
                 )
             return 0
 
+        port = resolve_serial_port(args.port)
         connection = SerialConnection(
-            port=args.port,
+            port=port,
             baud=args.baud,
             reset_delay=args.reset_delay,
             write_timeout=args.write_timeout,
@@ -672,7 +743,7 @@ def main(argv: list[str] | None = None) -> int:
         with connection:
             if not is_series:
                 response = connection.send(commands[0])
-                print(f"sent {FRAME_SIZE} data bytes to {args.port} at {args.baud} baud")
+                print(f"sent {FRAME_SIZE} data bytes to {port} at {args.baud} baud")
                 if response:
                     printable = response.decode("ascii", errors="backslashreplace").strip()
                     print(f"cube response: {printable}")

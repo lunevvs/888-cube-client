@@ -57,12 +57,22 @@ _888_cube_client_frames() {
     done < <(compgen -f -- "$current" | LC_ALL=C sort)
 }
 
+_888_cube_client_ports() {
+    local port
+    printf '%s\n' auto
+    for port in /dev/cu.usbmodem* /dev/cu.usbserial* \
+        /dev/serial/by-id/*Arduino* /dev/serial/by-id/*arduino* \
+        /dev/serial/by-id/*SparkFun* /dev/ttyACM* /dev/ttyUSB* /dev/cuaU*; do
+        [[ -e "$port" ]] && printf '%s\n' "$port"
+    done
+}
+
 _888_cube_client() {
     local current previous options faces values
     COMPREPLY=()
     current="${COMP_WORDS[COMP_CWORD]}"
     previous="${COMP_WORDS[COMP_CWORD - 1]}"
-    options='-h --help --algorithm --algorithm-option -O --list-algorithms
+    options='-h --help --algorithm --algorithm-option -O --list-algorithms --list-ports
         --port --baud --reset-delay --write-timeout --response-timeout
         --ack --no-ack --fps --cycles --loop --dry-run
         --front --front-face --bottom --bottom-face'
@@ -84,7 +94,8 @@ _888_cube_client() {
             return
             ;;
         --port)
-            COMPREPLY=( $(compgen -f -- "$current") )
+            values="$(_888_cube_client_ports)"
+            COMPREPLY=( $(compgen -W "$values" -- "$current") )
             return
             ;;
         --baud)
