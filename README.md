@@ -42,6 +42,18 @@ python3 draw.py --cycles 3 draw-series/rotating-diagonal
 python3 draw.py --algorithm water_surface
 ```
 
+Повернуть любой кадр или алгоритм другой гранью к зрителю:
+
+```bash
+python3 draw.py --front left --algorithm notification_warning
+python3 draw.py --front up draw-series/rotating-diagonal
+```
+
+Параметр `--front` (также доступен как `--front-face`) принимает `front`,
+`back`, `left`, `right`, `up` или `down`. По умолчанию используется `front`.
+Поворот применяется ко всем кадрам непосредственно перед отправкой, поэтому он
+одинаково работает с файлами, сериями и процедурными алгоритмами.
+
 Получить список всех алгоритмов, их приоритетов и встроенных настроек:
 
 ```bash

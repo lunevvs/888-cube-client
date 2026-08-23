@@ -35,6 +35,42 @@ class DrawTests(unittest.TestCase):
         data = bytes(range(64))
         self.assertEqual(draw.build_command(data), b"draw " + data)
 
+    def test_front_face_is_not_rotated(self):
+        data = bytes(range(64))
+        self.assertIs(draw.orient_frame(data, "front"), data)
+
+    def test_frame_can_be_oriented_toward_every_cube_face(self):
+        frame = bytearray(64)
+        frame[1 * 8 + 2] = 1 << 3
+        expected_positions = {
+            "front": (1, 2, 3),
+            "back": (6, 5, 3),
+            "left": (5, 1, 3),
+            "right": (2, 6, 3),
+            "up": (1, 3, 5),
+            "down": (1, 4, 2),
+        }
+
+        for face, (x, y, z) in expected_positions.items():
+            with self.subTest(face=face):
+                expected = bytearray(64)
+                expected[x * 8 + y] = 1 << z
+                self.assertEqual(draw.orient_frame(bytes(frame), face), expected)
+
+    def test_front_parameter_accepts_all_six_faces(self):
+        for face in draw.FRONT_FACES:
+            with self.subTest(face=face):
+                arguments = draw.create_parser().parse_args(
+                    ["--front", face, "frame.bin"]
+                )
+                self.assertEqual(arguments.front, face)
+
+    def test_front_face_alias_is_supported(self):
+        arguments = draw.create_parser().parse_args(
+            ["--front-face", "left", "frame.bin"]
+        )
+        self.assertEqual(arguments.front, "left")
+
     def test_accepts_current_firmware_response(self):
         self.assertTrue(draw.response_confirms_frame(b"draw\r\n64\r\n"))
 

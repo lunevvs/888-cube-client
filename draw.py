@@ -22,6 +22,7 @@ DEFAULT_BAUD = 9600
 FRAME_SIZE = 64
 COMMAND_PREFIX = b"draw "
 EMPTY_COMMAND = COMMAND_PREFIX + bytes(FRAME_SIZE)
+FRONT_FACES = ("front", "back", "left", "right", "up", "down")
 
 
 class DrawError(Exception):
@@ -138,6 +139,41 @@ def build_command(data: bytes) -> bytes:
             f"binary data must contain exactly {FRAME_SIZE} bytes; got {len(data)}"
         )
     return COMMAND_PREFIX + data
+
+
+def orient_frame(data: bytes, front: str) -> bytes:
+    """Rotate a frame so its virtual front points at the selected cube face."""
+    if len(data) != FRAME_SIZE:
+        raise DrawError(
+            f"binary data must contain exactly {FRAME_SIZE} bytes; got {len(data)}"
+        )
+    if front not in FRONT_FACES:
+        raise DrawError(
+            f"unknown front face {front!r}; available: {', '.join(FRONT_FACES)}"
+        )
+    if front == "front":
+        return data
+
+    oriented = bytearray(FRAME_SIZE)
+    for x in range(8):
+        for y in range(8):
+            column = data[x * 8 + y]
+            for z in range(8):
+                if not column & (1 << z):
+                    continue
+                if front == "back":
+                    target = (7 - x, 7 - y, z)
+                elif front == "left":
+                    target = (7 - y, x, z)
+                elif front == "right":
+                    target = (y, 7 - x, z)
+                elif front == "up":
+                    target = (x, z, 7 - y)
+                else:  # down
+                    target = (x, 7 - z, y)
+                target_x, target_y, target_z = target
+                oriented[target_x * 8 + target_y] |= 1 << target_z
+    return bytes(oriented)
 
 
 def baud_constant(baud: int) -> int:
@@ -456,6 +492,17 @@ def create_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="validate and describe the frame without opening the serial port",
     )
+    parser.add_argument(
+        "--front",
+        "--front-face",
+        choices=FRONT_FACES,
+        default="front",
+        metavar="FACE",
+        help=(
+            "rotate frames so their front points at FACE: "
+            "front, back, left, right, up, or down (default: front)"
+        ),
+    )
     return parser
 
 
@@ -511,14 +558,14 @@ def main(argv: list[str] | None = None) -> int:
             cycles = args.cycles
             clear_after = True
 
-        commands = [build_command(data) for _, data in frames]
+        commands = [build_command(orient_frame(data, args.front)) for _, data in frames]
         if (args.cycles is not None or args.loop) and not is_series:
             raise DrawError("--cycles can only be used with a series or algorithm")
         if args.dry_run:
             if not is_series:
                 print(
                     f"valid frame: {frames[0][0]} ({FRAME_SIZE} data bytes, "
-                    f"{len(commands[0])} command bytes)"
+                    f"{len(commands[0])} command bytes, front: {args.front})"
                 )
             else:
                 cycle_description = (
@@ -526,7 +573,7 @@ def main(argv: list[str] | None = None) -> int:
                 )
                 print(
                     f"valid series: {source_label} ({len(frames)} frames at "
-                    f"{fps:g} fps, {cycle_description})"
+                    f"{fps:g} fps, {cycle_description}, front: {args.front})"
                 )
             return 0
 
