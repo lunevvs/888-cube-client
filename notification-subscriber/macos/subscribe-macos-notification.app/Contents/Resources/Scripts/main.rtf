@@ -1,0 +1,101 @@
+{\rtf1\ansi\ansicpg1251\cocoartf2822
+\cocoatextscaling0\cocoaplatform0{\fonttbl\f0\fswiss\fcharset0 Helvetica-Light;}
+{\colortbl;\red255\green255\blue255;}
+{\*\expandedcolortbl;;}
+\pard\tx560\tx1120\tx1680\tx2240\tx2800\tx3360\tx3920\tx4480\tx5040\tx5600\tx6160\tx6720\pardirnatural\partightenfactor0
+
+\f0\fs24 \cf0 property visibleNotifications : \{\}\
+property notificationLogPath : "/Users/v.s.lunev/IdeaProjects/personal/888-cube-client/tools/notification"\
+\
+on idle\
+	set notificationsNow to \{\}\
+\
+	tell application "System Events"\
+		if not (exists process "NotificationCenter") then return 1\
+\
+		tell process "NotificationCenter"\
+			repeat with notificationWindow in every window\
+				set notificationTexts to \{\}\
+\
+				try\
+					-- Notification text is nested several levels deep on recent macOS versions.\
+					set windowContents to entire contents of notificationWindow\
+\
+					repeat with uiElement in windowContents\
+						try\
+							if role of uiElement is "AXStaticText" then\
+								set elementText to value of uiElement\
+\
+								if elementText is missing value or elementText is "" then\
+									set elementText to name of uiElement\
+								end if\
+\
+								if elementText is not missing value and elementText is not "" then\
+									set elementText to my normaliseText(elementText as text)\
+\
+									if elementText is not "" and notificationTexts does not contain elementText then\
+										set end of notificationTexts to elementText\
+									end if\
+								end if\
+							end if\
+						on error\
+							-- Some accessibility elements do not expose role/value/name.\
+						end try\
+					end repeat\
+				on error\
+					-- Ignore Notification Center windows without accessible contents.\
+				end try\
+\
+				if (count of notificationTexts) > 0 then\
+					set notificationContent to my joinText(notificationTexts, " | ")\
+\
+					if notificationsNow does not contain notificationContent then\
+						set end of notificationsNow to notificationContent\
+					end if\
+				end if\
+			end repeat\
+		end tell\
+	end tell\
+\
+	repeat with notificationContent in notificationsNow\
+		set notificationContent to notificationContent as text\
+\
+		if visibleNotifications does not contain notificationContent then\
+			my appendNotification(notificationContent)\
+		end if\
+	end repeat\
+\
+	set visibleNotifications to notificationsNow\
+	return 1\
+end idle\
+\
+on appendNotification(notificationContent)\
+	set timestamp to \'abevent sysoexec\'bb "/bin/date '+%Y-%m-%d %H:%M:%S'"\
+	set logLine to timestamp & " | " & notificationContent\
+	\'abevent sysoexec\'bb "/usr/bin/printf '%s\\\\n' " & quoted form of logLine & " >> " & quoted form of notificationLogPath\
+end appendNotification\
+\
+on joinText(textItems, separator)\
+	set previousDelimiters to AppleScript's text item delimiters\
+	set AppleScript's text item delimiters to separator\
+	set joinedText to textItems as text\
+	set AppleScript's text item delimiters to previousDelimiters\
+	return joinedText\
+end joinText\
+\
+on normaliseText(sourceText)\
+	set sourceText to my replaceText(return, " ", sourceText)\
+	set sourceText to my replaceText(linefeed, " ", sourceText)\
+	return sourceText\
+end normaliseText\
+\
+on replaceText(searchText, replacementText, sourceText)\
+	set previousDelimiters to AppleScript's text item delimiters\
+	set AppleScript's text item delimiters to searchText\
+	set textParts to text items of sourceText\
+	set AppleScript's text item delimiters to replacementText\
+	set replacedText to textParts as text\
+	set AppleScript's text item delimiters to previousDelimiters\
+	return replacedText\
+end replaceText\
+}

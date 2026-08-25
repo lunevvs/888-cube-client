@@ -1,0 +1,26 @@
+drawScript: ../draw.py
+
+rules:
+  - name: error
+    filters:
+      notificationHeader:
+        regex: "(?i)(error|ошибка|сбой|finedog)"
+    command:
+      - --algorithm
+      - notification_error
+
+  - name: reminder
+    filters:
+      notificationHeader:
+        regex: "(?i)(remind|напомин)"
+    command:
+      - --algorithm
+      - notification_urgent
+
+  - name: warning
+    filters:
+      notificationHeader:
+        regex: "(?i)(warn|внимание)"
+    command:
+      - --algorithm
+      - notification_warning
